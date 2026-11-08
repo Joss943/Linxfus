@@ -1,0 +1,20 @@
+name: Site
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**']
+permissions:
+  contents: write
+concurrency: pages
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Publier docs/ sur la branche gh-pages
+        run: |
+          cp -r docs /tmp/site && touch /tmp/site/.nojekyll
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -q --orphan gh-pages && git rm -rfq . && cp -r /tmp/site/. .
+          git add -A && git commit -qm "site: ${GITHUB_SHA::7}" && git push -qf origin gh-pages
