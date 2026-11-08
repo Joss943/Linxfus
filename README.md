@@ -89,7 +89,7 @@ macOS   : --mac-recovery VER · --mac-mode raw|opencore · --efi DOSSIER
 ## Tests
 
 ```bash
-sudo tests/run.sh    # 25 tests sur un loop device : Windows MBR/GPT, découpage WIM, dd, xz, OpenCore, garde-fous
+sudo tests/run.sh    # 27 tests sur un loop device : Windows MBR/GPT, découpage WIM, dd, xz, OpenCore, garde-fous
 ```
 
 ## Licence
