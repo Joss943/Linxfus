@@ -41,6 +41,7 @@ os.makedirs(f'{T}/pl')
 sh(f'head -c 30M /dev/urandom > {T}/pl/a.bin && head -c 1M /dev/urandom > {T}/pl/b.bin')
 sh(f'wimlib-imagex capture {T}/pl {T}/win/sources/install.wim Test --compress=none >/dev/null')
 sh(f'head -c 2M /dev/urandom > {T}/win/sources/boot.wim; echo b > {T}/win/bootmgr; echo e > {T}/win/efi/boot/bootx64.efi')
+subprocess.run(['modprobe', '-q', 'udf'], stderr=subprocess.DEVNULL)   # module noyau chargé à la demande
 udf = 'udf' in open('/proc/filesystems').read()
 if udf:   # vraie ISO Microsoft : UDF
     sh(f'genisoimage -quiet -udf -iso-level 3 -J -V CCCOMA_X64FRE_FR-FR_DV9 -o {T}/win.iso {T}/win 2>/dev/null')
