@@ -1,0 +1,9 @@
+name: shellcheck
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -S warning linxfus
+      - run: bash -n linxfus && ./linxfus --help >/dev/null
