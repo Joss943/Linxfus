@@ -6,9 +6,9 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>LinXfus — Rufus pour Linux : clés USB bootables Windows, macOS, Linux</title>
-<meta name="description" content="LinXfus crée des clés USB bootables Windows, macOS et Linux depuis Linux, en une commande. Détection automatique, WIM > 4 Go, BIOS + UEFI, bypass Windows 11, recovery macOS officielle.">
+<meta name="description" content="LinXfus, c'est Rufus pour Linux : une fenêtre, tu choisis la clé et l'image, tu cliques sur DÉMARRER. Windows (BIOS + UEFI, bypass Windows 11), macOS (recovery Apple) et Linux.">
 <meta property="og:title" content="LinXfus — Rufus pour Linux">
-<meta property="og:description" content="Clés USB bootables Windows, macOS et Linux depuis le terminal. Un seul script bash.">
+<meta property="og:description" content="Clés USB bootables Windows, macOS et Linux. Même fenêtre que Rufus, sous Linux.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://joss943.github.io/Linxfus/">
 <meta name="theme-color" content="#0b0f14">
@@ -18,11 +18,11 @@
 </head>
 <body>
 <header class="nav">
-  <a class="logo" href="#"><img src="favicon.svg" alt="" width="22" height="22"><span>LinX<i>fus</i></span></a>
+  <a class="logo" href="#"><img src="favicon.svg" alt="" width="24" height="24"><span>LinX<i>fus</i></span></a>
   <nav>
+    <a href="#utilisation">Utilisation</a>
     <a href="#systemes">Systèmes</a>
     <a href="#installer">Installer</a>
-    <a href="#usage">Usage</a>
     <a href="#securite">Sécurité</a>
     <a class="gh" href="https://github.com/Joss943/Linxfus">GitHub</a>
   </nav>
@@ -30,59 +30,72 @@
 
 <main>
 <section class="hero">
-  <p class="tag">v1.1.0 · un seul script bash · MIT</p>
-  <h1>Rufus, version Linux.<br><em>Une commande, une clé bootable.</em></h1>
-  <p class="lead">LinXfus crée des clés USB bootables <b>Windows</b>, <b>macOS</b> et <b>Linux</b> depuis ton terminal. Il reconnaît l'image, choisit la bonne méthode et refuse de toucher à ton disque système.</p>
-  <div class="cmd" id="installer">
-    <code>curl -fsSL https://raw.githubusercontent.com/Joss943/Linxfus/main/linxfus | sudo install -m755 /dev/stdin /usr/local/bin/linxfus</code>
-    <button type="button" data-copy>Copier</button>
+  <div class="hero-text">
+    <p class="tag">v2.0.0 · GTK 4 · MIT</p>
+    <h1>Rufus, version Linux.<br><em>Tu choisis, tu cliques, c'est prêt.</em></h1>
+    <p class="lead">LinXfus crée des clés USB bootables <b>Windows</b>, <b>macOS</b> et <b>Linux</b> dans une fenêtre qui reprend celle de Rufus : périphérique, image, options, <b>DÉMARRER</b>. Il reconnaît l'image tout seul et refuse de toucher à ton disque système.</p>
+    <div class="cmd" id="installer">
+      <code>curl -fsSL https://raw.githubusercontent.com/Joss943/Linxfus/main/install.sh | sudo bash</code>
+      <button type="button" data-copy>Copier</button>
+    </div>
+    <p class="hint">Une seule fois. Ensuite, ouvre <b>LinXfus</b> dans tes applications, comme n'importe quel logiciel. Fedora, Ubuntu, Debian 13, Arch.</p>
   </div>
-  <p class="hint">Puis <code>sudo linxfus --deps</code> installe ce qu'il faut (dnf, apt ou pacman), et <code>sudo linxfus</code> lance le mode interactif.</p>
+  <figure class="win">
+    <div class="win-bar"><span>LinXfus 2.0.0</span><i></i></div>
+    <picture>
+      <source srcset="app-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="app-light.png" width="520" height="649" alt="Fenêtre de LinXfus : périphérique, type de démarrage, option d'image, schéma de partition, options de formatage, statut et bouton DÉMARRER">
+    </picture>
+  </figure>
+</section>
 
-  <pre class="term" aria-label="Exemple d'exécution"><span class="p">$</span> sudo linxfus -i Win11.iso -d /dev/sdb --win11-bypass
-
-<b>Récapitulatif</b>
-  Image : Win11.iso (5.4Gio)
-  Mode  : Windows — FAT32, MBR (BIOS + UEFI), bypass Win11
-  Clé   : /dev/sdb — SanDisk Ultra — 28.7Gio
-  <span class="r">⚠ TOUT le contenu de /dev/sdb va être effacé.</span>
-Tape OUI pour continuer : OUI
-<span class="b">[*]</span> Partitionnement (mbr) + FAT32 « CCCOMA_X64F »…
-<span class="b">[*]</span> Copie des fichiers Windows (5.4Gio)…
-<span class="b">[*]</span> install.wim &gt; 4 Go → découpage en morceaux de 3800 Mo…
-<span class="g">[✓]</span> autounattend.xml ajouté (contournement TPM / Secure Boot / RAM).
-<span class="g">[✓]</span> Démarrage BIOS (Legacy/CSM) installé.
-<span class="g">[✓]</span> Clé prête : /dev/sdb — tu peux la retirer.</pre>
+<section id="utilisation" class="usage">
+  <div>
+    <h2>Exactement comme Rufus</h2>
+    <ol class="steps">
+      <li><b>Branche ta clé</b><span>Elle apparaît dans « Périphérique ». Seules les clés amovibles sont listées.</span></li>
+      <li><b>SÉLECTION</b><span>Choisis ton ISO, IMG ou DMG, ou glisse-la sur la fenêtre. Pour macOS, choisis « Télécharger macOS ».</span></li>
+      <li><b>Vérifie les options</b><span>Schéma MBR ou GPT, Windows 11 sans TPM, nom de volume. Seules les options utiles sont actives.</span></li>
+      <li><b>DÉMARRER</b><span>Tu confirmes, tu tapes ton mot de passe, et la barre verte affiche <b>PRÊT</b>.</span></li>
+    </ol>
+  </div>
+  <figure class="win small">
+    <div class="win-bar"><span>LinXfus 2.0.0</span><i></i></div>
+    <picture>
+      <source srcset="app-run-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="app-run-light.png" width="520" height="649" alt="Écriture en cours : barre de progression verte à 47 %, bouton ANNULER" loading="lazy">
+    </picture>
+  </figure>
 </section>
 
 <section id="systemes">
   <h2>Trois systèmes, zéro réglage</h2>
   <div class="grid3">
-    <article class="card win">
+    <article class="card wc">
       <h3>Windows 7 → 11</h3>
       <ul>
-        <li>MBR <small>(BIOS + UEFI)</small> ou GPT <small>(UEFI)</small>, FAT32</li>
-        <li><code>install.wim</code> &gt; 4 Go découpé en <code>.swm</code></li>
+        <li>MBR <small>(BIOS ou UEFI)</small> ou GPT <small>(UEFI)</small>, FAT32</li>
+        <li><code>install.wim</code> de plus de 4 Go découpé automatiquement</li>
         <li>Démarrage BIOS via GRUB → <code>bootmgr</code></li>
-        <li><code>--win11-bypass</code> : sans TPM, Secure Boot ni 4 Go de RAM</li>
+        <li>« Installation étendue » : sans TPM, Secure Boot ni 4 Go de RAM</li>
       </ul>
     </article>
     <article class="card mac">
       <h3>macOS</h3>
       <ul>
-        <li><code>--mac-recovery sonoma</code> : recovery officielle Apple</li>
-        <li>Vérifiée par la chunklist signée par Apple</li>
-        <li>Mode <code>raw</code> pour Mac Intel</li>
-        <li>Mode <code>opencore</code> pour Hackintosh, <code>--efi</code> inclus</li>
+        <li>« Télécharger macOS » : recovery officielle depuis les serveurs Apple</li>
+        <li>Vérifiée contre la signature Apple</li>
+        <li>Mac Intel ou Hackintosh (OpenCore), dossier EFI inclus</li>
+        <li>De El Capitan à macOS 26 Tahoe</li>
       </ul>
     </article>
     <article class="card lin">
       <h3>Linux &amp; images</h3>
       <ul>
-        <li>ISO hybrides : Fedora, Ubuntu, Debian, Arch…</li>
-        <li><code>.img</code>, <code>.xz</code>, <code>.gz</code>, <code>.zst</code>, <code>.bz2</code> décompressés à la volée</li>
-        <li>Décompression multi-cœur (xz, pigz, lbzip2)</li>
-        <li><code>-V</code> relit la clé octet par octet</li>
+        <li>ISO Fedora, Ubuntu, Debian, Arch, Mint…</li>
+        <li><code>.img</code>, <code>.xz</code>, <code>.gz</code>, <code>.zst</code> (Raspberry Pi…)</li>
+        <li>Décompression à la volée, sur plusieurs cœurs</li>
+        <li>Vérification de la clé après écriture</li>
       </ul>
     </article>
   </div>
@@ -91,50 +104,22 @@ Tape OUI pour continuer : OUI
 <section class="feat">
   <h2>Léger et rapide</h2>
   <div class="grid4">
-    <div><b>1 fichier</b><span>Un script bash d'environ 30 Ko. Rien à compiler, aucun service.</span></div>
-    <div><b>Auto-détection</b><span>ISO Windows, ISO hybride, DMG Apple ou image brute : la méthode suit.</span></div>
-    <div><b>Écriture directe</b><span><code>dd</code> en O_DIRECT par blocs de 4 Mo, sans copie intermédiaire.</span></div>
-    <div><b>Vraie progression</b><span>Affiche ce qui reste réellement à écrire sur la clé, pas le cache.</span></div>
-  </div>
-</section>
-
-<section id="usage">
-  <h2>Usage</h2>
-  <div class="grid2">
-<pre class="code"><span class="c"># Quelles clés sont branchées ?</span>
-linxfus -l
-
-<span class="c"># Mode guidé</span>
-sudo linxfus
-
-<span class="c"># Windows 11, PC sans TPM</span>
-sudo linxfus -i Win11.iso -d /dev/sdb --win11-bypass
-
-<span class="c"># Windows, UEFI uniquement</span>
-sudo linxfus -i Win10.iso -d /dev/sdb -s gpt</pre>
-<pre class="code"><span class="c"># Linux avec contrôle d'intégrité</span>
-sudo linxfus -i Fedora.iso -d /dev/sdb --sha256 &lt;hash&gt; -V
-
-<span class="c"># Raspberry Pi, image compressée</span>
-sudo linxfus -i raspios.img.xz -d /dev/sdb
-
-<span class="c"># macOS pour Mac Intel</span>
-sudo linxfus --mac-recovery sonoma -d /dev/sdb
-
-<span class="c"># Hackintosh</span>
-sudo linxfus --mac-recovery sequoia --mac-mode opencore --efi ./EFI -d /dev/sdb</pre>
+    <div><b>~60 Ko</b><span>Une fenêtre GTK 4 en Python et un moteur bash. Aucun service, rien qui tourne en fond.</span></div>
+    <div><b>Natif</b><span>Suit le thème clair ou sombre de ton bureau, GNOME, KDE ou autre.</span></div>
+    <div><b>Écriture directe</b><span>Blocs de 4 Mo en accès direct, sans copie intermédiaire.</span></div>
+    <div><b>Vraie progression</b><span>La barre suit ce qui est réellement écrit sur la clé, jusqu'au dernier octet.</span></div>
   </div>
 </section>
 
 <section id="securite">
   <h2>Pensé pour ne rien casser</h2>
   <ul class="checks">
-    <li>Refuse le disque système (<code>/</code>, <code>/boot</code>, <code>/home</code>, swap), même derrière LVM ou LUKS.</li>
-    <li>Refuse les disques non amovibles, les partitions et les disques montés hors <code>/media</code> sans <code>--force</code>.</li>
-    <li>Récapitulatif + <code>OUI</code> obligatoire, puis re-vérification de la clé : si elle a été échangée entre-temps, rien n'est écrit.</li>
-    <li>Les DMG sont testés <em>avant</em> d'effacer quoi que ce soit.</li>
-    <li>Le seul code externe (macrecovery d'OpenCorePkg) est épinglé sur une version et vérifié par SHA-256.</li>
-    <li>Montages <code>nosuid,nodev,noexec</code>, <code>PATH</code> figé, nettoyage automatique même après Ctrl+C.</li>
+    <li>Le disque système n'est jamais proposé, même derrière LVM ou LUKS.</li>
+    <li>Avertissement avant d'effacer, comme Rufus, puis re-vérification : si la clé a été échangée entre-temps, rien n'est écrit.</li>
+    <li>Mot de passe administrateur demandé par polkit, uniquement au moment d'écrire. La fenêtre elle-même tourne sans droits.</li>
+    <li>ANNULER arrête proprement l'écriture et démonte tout.</li>
+    <li>Le seul code externe (macrecovery d'OpenCorePkg) est figé sur une version et vérifié par SHA-256.</li>
+    <li>Testé automatiquement à chaque modification : moteur et interface, sur une clé virtuelle.</li>
   </ul>
 </section>
 
@@ -142,10 +127,15 @@ sudo linxfus --mac-recovery sequoia --mac-mode opencore --efi ./EFI -d /dev/sdb<
   <h2>Limites, sans détour</h2>
   <ul>
     <li><b>Mac Apple Silicon</b> : ils ne démarrent pas sur ces clés. Il faut <code>createinstallmedia</code> depuis un Mac.</li>
-    <li><b>macOS en mode raw</b> : fiable jusqu'à Catalina. Au-delà (DMG en LZFSE), utilise <code>--mac-mode opencore</code>.</li>
-    <li><b>Bypass Windows 11</b> : méthode LabConfig, comme Rufus. Microsoft peut la casser dans une future version.</li>
+    <li><b>macOS sur Mac Intel</b> : fiable jusqu'à Catalina. Au-delà, si la version est refusée, choisis Hackintosh (OpenCore). La clé n'est pas effacée avant.</li>
+    <li><b>Windows 11 sans TPM</b> : même méthode que Rufus. Microsoft peut la casser dans une future version.</li>
     <li><b>Pas de persistance</b> pour les live USB Linux. Pour ça, Ventoy.</li>
   </ul>
+</section>
+
+<section class="cli">
+  <h2>Et en ligne de commande ?</h2>
+  <p class="lead">Le moteur s'utilise aussi seul, pour les scripts : <code>sudo linxfus -i Win11.iso -d /dev/sdb --win11-bypass</code>. Tout est dans <code>linxfus --help</code>.</p>
 </section>
 </main>
 

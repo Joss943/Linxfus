@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>LinXfus</vendor>
+  <vendor_url>https://github.com/Joss943/Linxfus</vendor_url>
+  <action id="io.github.joss943.linxfus.write">
+    <description>Create a bootable USB drive</description>
+    <description xml:lang="fr">Créer une clé USB bootable</description>
+    <message>LinXfus needs administrator rights to write to the USB drive</message>
+    <message xml:lang="fr">LinXfus a besoin des droits administrateur pour écrire sur la clé USB</message>
+    <icon_name>io.github.joss943.Linxfus</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/linxfus</annotate>
+  </action>
+</policyconfig>

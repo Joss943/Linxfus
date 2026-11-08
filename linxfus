@@ -7,24 +7,32 @@ IFS=$' \t\n'
 umask 077
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-readonly VERSION=1.1.0 PROG=linxfus
+readonly VERSION=2.0.0 PROG=linxfus
 readonly FAT32_MAX=4294967295 SWM_MB=3800 CACHE=/var/cache/linxfus
 # macrecovery (OpenCorePkg) épinglé sur une version ET une empreinte : rien d'autre n'est exécuté.
 readonly OC_URL=https://raw.githubusercontent.com/acidanthera/OpenCorePkg/1.0.8/Utilities/macrecovery/macrecovery.py
 readonly OC_SHA=3023a9b4ca79a5255d93c00f25ab5df37e6f938b729b797d9ecea56184b17aff
 
 # ─────────────────────────────── affichage ───────────────────────────────
-if [[ -t 1 ]]; then R=$'\e[31m' G=$'\e[32m' Y=$'\e[33m' B=$'\e[34m' W=$'\e[1m' N=$'\e[0m'
+# --gui : sortie lisible par l'interface graphique (@I info, @O ok, @W alerte, @E erreur, @T taille, @F reste à écrire)
+GUI=0; for a; do [[ $a == --gui ]] && GUI=1; done
+if [[ -t 1 ]] && ((!GUI)); then R=$'\e[31m' G=$'\e[32m' Y=$'\e[33m' B=$'\e[34m' W=$'\e[1m' N=$'\e[0m'
 else R='' G='' Y='' B='' W='' N=''; fi
-info() { printf '%s[*]%s %s\n' "$B" "$N" "$*"; }
-ok()   { printf '%s[✓]%s %s\n' "$G" "$N" "$*"; }
-warn() { printf '%s[!]%s %s\n' "$Y" "$N" "$*" >&2; }
-die()  { printf '%s[✗]%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
+if ((GUI)); then
+  info() { printf '@I %s\n' "$*"; }; ok() { printf '@O %s\n' "$*"; }
+  warn() { printf '@W %s\n' "$*"; }; die() { printf '@E %s\n' "$*"; exit 1; }
+else
+  info() { printf '%s[*]%s %s\n' "$B" "$N" "$*"; }
+  ok()   { printf '%s[✓]%s %s\n' "$G" "$N" "$*"; }
+  warn() { printf '%s[!]%s %s\n' "$Y" "$N" "$*" >&2; }
+  die()  { printf '%s[✗]%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
+fi
 hsize() { LC_ALL=C numfmt --to=iec-i --suffix=o --format=%.1f "$1" 2>/dev/null || echo "$1 o"; }
 
 usage() {
   cat <<EOF
 ${W}LinXfus $VERSION${N} — clés USB bootables Windows / macOS / Linux
+Interface graphique : linxfus-gui (menu Applications → LinXfus)
 
 ${W}Usage${N}
   sudo $PROG                                   mode interactif
@@ -40,7 +48,7 @@ ${W}Général${N}
   -V, --verify            relit la clé après écriture (images brutes)
   -y, --yes               pas de confirmation (dangereux)
   -f, --force             autorise un disque non amovible ou monté ailleurs
-  -l, --list              liste les clés USB détectées
+  -l, --list              liste les clés USB détectées (avec -f : tous les disques hors système)
       --deps              installe les dépendances (dnf / apt / pacman)
   -h, --help | -v, --version
 
@@ -86,6 +94,7 @@ while (($#)); do
     --win11-bypass) WIN11_BYPASS=1 ;;
     -l|--list)      ACTION=list ;;
     --deps)         ACTION=deps ;;
+    --gui)          YES=1 ;;
     -h|--help)      usage; exit 0 ;;
     -v|--version)   echo "$PROG $VERSION"; exit 0 ;;
     *)              die "Option inconnue : $1 (voir --help)" ;;
@@ -134,12 +143,12 @@ system_disks() {
   done | sort -u
 }
 
-usb_disks() {
+usb_disks() {  # clés amovibles ; avec --force, tous les disques sauf celui du système
   local d sys; sys=$(system_disks)
-  for d in /sys/block/sd* /sys/block/mmcblk[0-9]*; do
+  for d in /sys/block/sd* /sys/block/mmcblk[0-9]* /sys/block/nvme* /sys/block/vd*; do
     d=/dev/${d##*/}
     [[ $d == *boot* || $d == *rpmb* ]] && continue
-    is_removable "$d" || continue
+    is_removable "$d" || ((FORCE)) || continue
     grep -qx -- "$d" <<<"$sys" && continue
     (($(dev_size "$d") > 0)) && echo "$d"
   done
@@ -148,11 +157,13 @@ usb_disks() {
 
 list_disks() {
   local d n=0
-  printf '%s%-14s %10s  %s%s\n' "$W" DISQUE TAILLE MODÈLE "$N"
+  ((GUI)) || printf '%s%-14s %10s  %s%s\n' "$W" DISQUE TAILLE MODÈLE "$N"
   while read -r d; do
     [[ -n $d ]] || continue
+    if ((GUI)); then printf '%s|%s|%s\n' "$d" "$(dev_size "$d")" "$(dev_model "$d")"; n=1; continue; fi
     printf '%-14s %10s  %s\n' "$d" "$(hsize "$(dev_size "$d")")" "$(dev_model "$d")"; n=1
   done < <(usb_disks)
+  ((GUI)) && return 0
   ((n)) || warn "Aucune clé USB détectée."
 }
 
@@ -174,10 +185,11 @@ install_deps() {
 }
 
 # ─────────────────────────────── nettoyage ───────────────────────────────
-WORK='' ISO_MNT='' USB_MNT=''
+WORK='' ISO_MNT='' USB_MNT='' WATCH=''
 cleanup() {
   trap - ERR; set +e
   local m busy=0
+  [[ -n $WATCH ]] && kill "$WATCH" 2>/dev/null
   for m in "$USB_MNT" "$ISO_MNT"; do
     [[ -n $m ]] && mountpoint -q "$m" && { umount "$m" 2>/dev/null || umount -l "$m" 2>/dev/null || busy=1; }
   done
@@ -213,6 +225,14 @@ detect_type() {  # pas de sous-shell : le montage de l'ISO doit rester visible
 
 is_hybrid() { [[ $(od -An -tx1 -j510 -N2 -- "$1" | tr -d ' \n') == 55aa ]]; }
 is_compressed() { case ${1,,} in *.xz|*.gz|*.zst|*.bz2) return 0 ;; *) return 1 ;; esac; }
+raw_size() {  # taille réelle de l'image (vide si inconnue : gzip/bzip2)
+  case ${1,,} in
+    *.xz)  xz --robot -l -- "$1" 2>/dev/null | awk '$1=="totals"{print $5}' || true ;;
+    *.zst) zstd -lv -- "$1" 2>/dev/null | sed -n 's/.*Decompressed Size:.*(\([0-9]*\) B).*/\1/p' | head -1 || true ;;
+    *.gz|*.bz2) ;;
+    *)     stat -Lc %s -- "$1" ;;
+  esac
+}
 decompress() {  # décompresseurs parallèles quand ils sont là
   case ${1,,} in
     *.xz)  need xz; xz -T0 -dc -- "$1" ;;
@@ -279,10 +299,12 @@ copy_tree() {  # $1 = source, $2 = destination, puis exclusions rsync
 
 finish() {
   if [[ -n $USB_MNT ]] && mountpoint -q "$USB_MNT"; then
-    local pid; sync -f "$USB_MNT" & pid=$!
+    info "Écriture des données sur la clé…"
+    local pid left; sync -f "$USB_MNT" & pid=$!
     while kill -0 "$pid" 2>/dev/null; do   # progression réelle : données encore en cache
-      [[ -t 1 ]] && printf '\r%s[*]%s Écriture sur la clé… %s restants   ' "$B" "$N" \
-        "$(hsize "$(awk '/^(Dirty|Writeback):/{s+=$2} END{print s*1024}' /proc/meminfo)")"
+      left=$(awk '/^(Dirty|Writeback):/{s+=$2} END{print s*1024}' /proc/meminfo)
+      if ((GUI)); then echo "@F $left"
+      elif [[ -t 1 ]]; then printf '\r%s[*]%s Écriture sur la clé… %s restants   ' "$B" "$N" "$(hsize "$left")"; fi
       sleep 1
     done
     wait "$pid"; [[ -t 1 ]] && printf '\r\e[K'
@@ -294,20 +316,19 @@ finish() {
 
 # ─────────────────────────────── écriture brute ───────────────────────────────
 write_raw() {
-  local img=$1 size=''
-  if ! is_compressed "$img"; then
-    size=$(stat -Lc %s -- "$img")
-    ((size <= $(dev_size "$DEVICE"))) || die "Image ($(hsize "$size")) plus grande que la clé."
-  fi
+  local img=$1 size
+  size=$(raw_size "$img")
+  [[ -z $size ]] || ((size <= $(dev_size "$DEVICE"))) || die "Image ($(hsize "$size")) plus grande que la clé ($(hsize "$(dev_size "$DEVICE")"))."
   prepare_device
   info "Écriture de ${img##*/} sur $DEVICE…"
-  if [[ -n $size ]]; then dd if="$img" of="$DEVICE" bs=4M oflag=direct conv=fsync status=progress
+  [[ -n $size ]] && ((GUI)) && echo "@T $size"
+  if ! is_compressed "$img"; then dd if="$img" of="$DEVICE" bs=4M oflag=direct conv=fsync status=progress
   else decompress "$img" | dd of="$DEVICE" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress; fi
   if ((VERIFY)); then
     info "Vérification (relecture de la clé)…"
     blockdev --flushbufs "$DEVICE"
-    if [[ -n $size ]]; then cmp -n "$size" -- "$img" "$DEVICE"
-    else size=$(decompress "$img" | wc -c); cmp -n "$size" -- <(decompress "$img") "$DEVICE"; fi \
+    if ! is_compressed "$img"; then cmp -n "$size" -- "$img" "$DEVICE"
+    else size=${size:-$(decompress "$img" | wc -c)}; cmp -n "$size" -- <(decompress "$img") "$DEVICE"; fi \
       && ok "Vérification OK." || die "Vérification ÉCHOUÉE : clé défectueuse ou écriture incomplète."
   fi
   finish
@@ -532,6 +553,11 @@ fi
 
 need lsblk blockdev wipefs dd findmnt mount umount mountpoint numfmt blkid
 WORK=$(mktemp -d /var/tmp/linxfus.XXXXXX)
+if ((GUI)); then  # l'interface ferme stdin pour annuler : on arrête tout le groupe (dd, rsync…)
+  exec {IN}<&0
+  { while read -r _; do :; done; kill -TERM 0; } <&"$IN" &
+  WATCH=$!
+fi
 INTERACTIVE=0
 if [[ (-z $IMAGE && -z $MAC_RECOVERY) || -z $DEVICE ]]; then
   [[ -t 0 ]] || die "Image (-i) et clé (-d) requises hors terminal. Voir --help."

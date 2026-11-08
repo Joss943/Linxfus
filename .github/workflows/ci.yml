@@ -7,10 +7,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - run: shellcheck -S warning linxfus tests/run.sh
-  test:
+      - run: shellcheck -S warning linxfus install.sh tests/run.sh
+      - run: python3 -m py_compile linxfus-gui tests/gui_test.py
+  engine:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: sudo apt-get update -q && sudo apt-get install -yq parted dosfstools rsync wimtools grub-pc-bin grub2-common dmg2img xorriso
       - run: sudo REQUIRE_BIOS=1 tests/run.sh
+  gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: sudo apt-get update -q && sudo apt-get install -yq parted dosfstools rsync wimtools xorriso genisoimage python3-gi gir1.2-gtk-4.0 xvfb
+      - run: sudo GSK_RENDERER=cairo NO_AT_BRIDGE=1 xvfb-run -a /usr/bin/python3 tests/gui_test.py

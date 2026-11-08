@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=LinXfus
+GenericName=Créateur de clé USB bootable
+GenericName[en]=Bootable USB creator
+Comment=Créer des clés USB bootables Windows, macOS et Linux, comme Rufus
+Comment[en]=Create bootable Windows, macOS and Linux USB drives, like Rufus
+Exec=/usr/local/bin/linxfus-gui %f
+Icon=io.github.joss943.Linxfus
+Terminal=false
+Categories=Utility;
+Keywords=rufus;usb;iso;bootable;boot;windows;macos;linux;clé;
+MimeType=application/x-cd-image;application/x-iso9660-image;application/x-raw-disk-image;application/x-apple-diskimage;
+StartupNotify=true
+StartupWMClass=io.github.joss943.Linxfus
