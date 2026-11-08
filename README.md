@@ -1,11 +1,11 @@
 <h1 align="center">LinXfus</h1>
 <p align="center"><b>Rufus, version Linux.</b> Clés USB bootables Windows, macOS et Linux en une commande.</p>
 <p align="center">
-  <a href="https://joss943.github.io/linxfus/">Site</a> ·
+  <a href="https://joss943.github.io/Linxfus/">Site</a> ·
   <a href="#installation">Installation</a> ·
   <a href="#usage">Usage</a> ·
   <a href="#sécurité">Sécurité</a><br><br>
-  <a href="https://github.com/Joss943/linxfus/actions/workflows/ci.yml"><img src="https://github.com/Joss943/linxfus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Joss943/Linxfus/actions/workflows/ci.yml"><img src="https://github.com/Joss943/Linxfus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/bash-1%20fichier%20~30%20Ko-7ee787" alt="1 fichier">
   <img src="https://img.shields.io/badge/licence-MIT-blue" alt="MIT">
 </p>
@@ -29,7 +29,7 @@ $ sudo linxfus -i Win11.iso -d /dev/sdb --win11-bypass
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Joss943/linxfus/main/linxfus | sudo install -m755 /dev/stdin /usr/local/bin/linxfus && sudo linxfus --deps
+curl -fsSL https://raw.githubusercontent.com/Joss943/Linxfus/main/linxfus | sudo install -m755 /dev/stdin /usr/local/bin/linxfus && sudo linxfus --deps
 ```
 
 `--deps` installe les dépendances via `dnf`, `apt` ou `pacman` : parted, dosfstools, rsync, wimlib, GRUB i386-pc, dmg2img, python3, curl. Pour Linux, util-linux et coreutils suffisent ; Windows demande parted et dosfstools ; le reste n'est réclamé que si un cas en a besoin.

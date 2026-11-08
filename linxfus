@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LinXfus — l'équivalent de Rufus pour Linux : clés USB bootables Windows, macOS et Linux.
-# https://github.com/Joss943/linxfus — Licence MIT
+# https://github.com/Joss943/Linxfus — Licence MIT
 set -Eeuo pipefail
 shopt -s nullglob
 IFS=$' \t\n'
