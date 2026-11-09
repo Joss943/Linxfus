@@ -28,17 +28,24 @@ Désinstaller : `curl -fsSL https://raw.githubusercontent.com/Joss943/Linxfus/ma
 
 1. **Branche ta clé** : elle apparaît dans « Périphérique ».
 2. **SÉLECTION** : choisis ton ISO, IMG ou DMG (ou glisse-le sur la fenêtre). Pour macOS, choisis « Télécharger macOS » dans « Type de démarrage ».
-3. **Options** : schéma MBR ou GPT, « Installation étendue » pour Windows 11 sans TPM, nom de volume. Les options qui ne s'appliquent pas sont grisées.
-4. **DÉMARRER** : confirme, entre ton mot de passe, attends **PRÊT**. **ANNULER** arrête tout proprement.
+3. **Options** : schéma MBR ou GPT, nom de volume. Les options qui ne s'appliquent pas sont grisées.
+4. **DÉMARRER** : confirme, entre ton mot de passe, attends **PRÊT**. La barre affiche la vitesse et le temps restant. **ANNULER** arrête tout proprement.
 
-Le bouton ✓ calcule le SHA-256 de l'image, ☰ ouvre le journal. Les propriétés avancées permettent d'afficher les disques non amovibles et de vérifier la clé après écriture.
+<p align="center"><img src="docs/wue-light.png" width="440" alt="Options d'installation Windows"></p>
+
+Avec une ISO Windows, DÉMARRER ouvre le même dialogue que Rufus : sans TPM / Secure Boot / 4 Go de RAM, sans compte Microsoft en ligne, compte local créé d'avance, sans questions de confidentialité, sans chiffrement BitLocker automatique. Tes choix sont retenus pour la fois suivante.
+
+« Type de démarrage » propose aussi **Non amorçable** : la clé est simplement formatée en FAT32, exFAT, NTFS ou ext4, avec le nom de ton choix.
+
+Le bouton ✓ calcule le SHA-256 de l'image, ☰ ouvre le journal. Les propriétés avancées permettent d'afficher les disques non amovibles, de vérifier la clé après écriture et d'indiquer le SHA-256 attendu de l'image (elle est refusée s'il ne correspond pas). Raccourcis : Ctrl+O pour choisir une image, Ctrl+Q pour quitter.
 
 ## Ce que ça gère
 
 | | Méthode | Démarre en |
 |---|---|---|
-| **Windows 7 → 11** | FAT32, `install.wim` > 4 Go découpé (wimlib), GRUB → `bootmgr` pour le BIOS, option sans TPM / Secure Boot / RAM | MBR : BIOS ou UEFI · GPT : UEFI |
+| **Windows 7 → 11** | FAT32, `install.wim` > 4 Go découpé (wimlib), GRUB → `bootmgr` pour le BIOS, options d'installation de Rufus (`autounattend.xml`) | MBR : BIOS ou UEFI · GPT : UEFI |
 | **Linux** et images brutes | écriture directe, `.xz .gz .zst .bz2` décompressés à la volée en multi-cœur, vérification par relecture | celui de l'image |
+| **Formatage simple** | une partition FAT32, exFAT, NTFS ou ext4 (MBR ou GPT) | non amorçable |
 | **macOS** | recovery officielle téléchargée chez Apple et vérifiée contre la signature Apple ; image disque (Mac Intel) ou OpenCore (Hackintosh) | Mac Intel · OpenCore |
 
 ## Sécurité
@@ -55,7 +62,7 @@ Le bouton ✓ calcule le SHA-256 de l'image, ☰ ouvre le journal. Les propriét
 
 - **Mac Apple Silicon** : ils ne démarrent pas sur ces clés. Il faut `createinstallmedia` depuis un Mac.
 - **macOS sur Mac Intel** : fiable jusqu'à Catalina. Au-delà, si la version est refusée, choisis Hackintosh (OpenCore). La clé n'est pas effacée avant.
-- **Windows 11 sans TPM** : méthode LabConfig, comme Rufus. Microsoft peut la casser dans une future version.
+- **Options d'installation Windows** : mêmes réglages que Rufus (fichier de réponses `autounattend.xml`). Le fichier est testé automatiquement, mais pas encore vérifié sur une vraie installation de Windows. Microsoft peut aussi casser ces réglages dans une future version.
 - **Pas de persistance** pour les live USB Linux. Pour ça, Ventoy.
 
 ## Ligne de commande
@@ -67,6 +74,7 @@ linxfus -l                                             # clés branchées
 sudo linxfus -i Win11.iso -d /dev/sdb --win11-bypass
 sudo linxfus -i Fedora.iso -d /dev/sdb --sha256 <hash> -V
 sudo linxfus --mac-recovery sonoma -d /dev/sdb
+sudo linxfus --format exfat -L MA_CLE -d /dev/sdb      # clé non amorçable
 ```
 
 `linxfus --help` liste toutes les options.

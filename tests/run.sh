@@ -66,6 +66,29 @@ check "dmg + chunklist" '[[ -s $T/m/com.apple.recovery.boot/BaseSystem.dmg && -s
 check "EFI copié"       '[[ -s $T/m/EFI/OC/OpenCore.efi ]]'
 umnt
 
+echo "== Windows : options d'installation (autounattend.xml)"
+check "exécution" 'run -i "$T/win.iso" --win11-bypass --no-online-account --local-account "Jean Test" --no-data-collection --no-bitlocker'
+mnt
+check "XML bien formé"        'python3 -c "import sys, xml.dom.minidom as m; m.parse(sys.argv[1])" "$T/m/autounattend.xml"'
+check "TPM + compte en ligne" 'grep -q BypassTPMCheck "$T/m/autounattend.xml" && grep -q BypassNRO "$T/m/autounattend.xml"'
+check "compte local"          'grep -q "<Name>Jean Test</Name>" "$T/m/autounattend.xml"'
+check "collecte + BitLocker"  'grep -q "<ProtectYourPC>3" "$T/m/autounattend.xml" && grep -q PreventDeviceEncryption "$T/m/autounattend.xml"'
+umnt
+check "sans option : pas de fichier" 'run -i "$T/win.iso" --no-bios && mnt && [[ ! -e $T/m/autounattend.xml ]]'
+umnt
+check "nom de compte invalide refusé" '! run -i "$T/win.iso" --local-account "a/b"'
+check "nom de compte réservé refusé"  '! run -i "$T/win.iso" --local-account Administrator'
+
+echo "== Formatage simple (non amorçable)"
+for f in fat32:vfat:mkfs.vfat exfat:exfat:mkfs.exfat ntfs:ntfs:mkfs.ntfs ext4:ext4:mkfs.ext4; do
+  # shellcheck disable=SC2034  # utilisées dans les tests évalués
+  IFS=: read -r fs type tool <<<"$f"
+  command -v "$tool" >/dev/null || { echo "  - $fs non testable ici ($tool absent)"; continue; }
+  check "$fs + nom de volume" 'run --format $fs -L CLE_TEST && [[ $(blkid -p -o value -s TYPE "${LOOP}p1") == "$type" && $(blkid -p -o value -s LABEL "${LOOP}p1") == CLE_TEST ]]'
+done
+check "ext4 en GPT"            'run --format ext4 -s gpt && parted -s "$LOOP" print | grep -q "Partition Table: gpt"'
+check "système inconnu refusé" '! run --format btrfs'
+
 echo "== Garde-fous"
 dd if="$T/rpi.img" of="$LOOP" bs=4M oflag=direct status=none
 check "DMG invalide refusé"         '! run -i "$T/BaseSystem.dmg" && grep -q "dmg2img ne sait pas" "$T/log"'

@@ -2,6 +2,7 @@
 # LinXfus — interface graphique façon Rufus (GTK 4). Le travail est fait par le moteur « linxfus ».
 # https://github.com/Joss943/Linxfus — Licence MIT
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -17,7 +18,7 @@ gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 APP_ID = 'io.github.joss943.Linxfus'
-VERSION = '2.0.0'
+VERSION = '2.1.0'
 HERE = os.path.dirname(os.path.realpath(__file__))
 SYS_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 MACOS = [('tahoe', 'macOS 26 Tahoe'), ('sequoia', 'macOS 15 Sequoia'), ('sonoma', 'macOS 14 Sonoma'),
@@ -25,6 +26,15 @@ MACOS = [('tahoe', 'macOS 26 Tahoe'), ('sequoia', 'macOS 15 Sequoia'), ('sonoma'
          ('catalina', 'macOS 10.15 Catalina'), ('mojave', 'macOS 10.14 Mojave'),
          ('highsierra', 'macOS 10.13 High Sierra'), ('sierra', 'macOS 10.12 Sierra'),
          ('elcapitan', 'OS X 10.11 El Capitan')]
+BOOT_EXTRA = ['Télécharger macOS (serveurs Apple)', 'Non amorçable (formater la clé)']
+FS = [('fat32', 'FAT32', 'mkfs.vfat', 11), ('exfat', 'exFAT', 'mkfs.exfat', 15),
+      ('ntfs', 'NTFS', 'mkfs.ntfs', 32), ('ext4', 'ext4', 'mkfs.ext4', 16)]   # id, nom, outil, longueur du nom
+WUE_DEFAULT = {'bypass': True, 'no_online': True, 'user_on': False, 'user': '', 'no_data': False,
+               'no_bitlocker': False}
+RE_USER = re.compile(r'[\w. -]{1,20}')
+RESERVED = {'administrator', 'administrateur', 'guest', 'invité', 'defaultaccount', 'wdagutilityaccount',
+            'system', 'none', 'local', 'krbtgt'}
+CONF = os.path.join(GLib.get_user_config_dir(), 'linxfus', 'config.json')
 IMG_SUFFIXES = ('iso', 'img', 'dmg', 'xz', 'gz', 'zst', 'bz2', 'raw', 'bin')
 RE_DD = re.compile(r'^(\d+) bytes')
 RE_PCT = re.compile(r'(\d{1,3}(?:[.,]\d+)?)\s?%')
@@ -36,6 +46,29 @@ CSS = b'''
 .status { font-size: .9em; opacity: .75; }
 .mono { font-family: monospace; }
 '''
+
+
+def load_conf():
+    try:
+        with open(CONF) as fh:
+            c = json.load(fh)
+        return c if isinstance(c, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_conf(conf):
+    try:
+        os.makedirs(os.path.dirname(CONF), exist_ok=True)
+        with open(CONF, 'w') as fh:
+            json.dump(conf, fh)
+    except OSError:
+        pass
+
+
+def valid_user(name):
+    return bool(RE_USER.fullmatch(name)) and name == name.strip() and not name.endswith('.') \
+        and name.lower() not in RESERVED
 
 
 def find_backend():
@@ -118,7 +151,11 @@ class Window(Gtk.ApplicationWindow):
         self.image, self.img_kind, self.img_label, self.efi = None, None, '', None
         self.proc, self.busy, self.cancelled, self.updating, self.mode = None, False, False, False, None
         self.phase, self.frac, self.total, self.fmax, self.error, self.warnings = '', None, None, 0, '', []
-        self.t0 = 0
+        self.t0 = self.pt0 = self.f0 = 0
+        self.conf = load_conf()
+        self.wue = {**WUE_DEFAULT, **{k: v for k, v in self.conf.get('wue', {}).items() if k in WUE_DEFAULT}}
+        self.wue_win = None
+        self.fs_avail = [f for f in FS if shutil.which(f[2], path=SYS_PATH)] or FS[:1]
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
                        margin_top=14, margin_bottom=10, margin_start=16, margin_end=16)
@@ -129,7 +166,7 @@ class Window(Gtk.ApplicationWindow):
         self.dev_dd = dropdown(['Aucun périphérique détecté'])
         root.append(field('Périphérique', self.dev_dd))
 
-        self.boot_dd = dropdown(['Image disque ou ISO (Veuillez sélectionner)', 'Télécharger macOS (serveurs Apple)'])
+        self.boot_dd = dropdown(['Image disque ou ISO (Veuillez sélectionner)'] + BOOT_EXTRA)
         self.hash_btn = Gtk.Button(label='✓', tooltip_text='Calculer la somme SHA-256 de l\'image')
         self.sel_btn = Gtk.Button(label='SÉLECTION', tooltip_text='Choisir une image (ou glisser-déposer un fichier sur la fenêtre)')
         row = Gtk.Box(spacing=6)
@@ -162,8 +199,11 @@ class Window(Gtk.ApplicationWindow):
         adv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=6)
         self.all_chk = Gtk.CheckButton(label='Lister les disques non amovibles (disques USB, NVMe…)')
         self.verify_chk = Gtk.CheckButton(label='Vérifier la clé après écriture (relecture)')
+        self.sha_ent = Gtk.Entry(max_length=64, placeholder_text='SHA-256 attendu de l\'image (optionnel)')
+        self.sha_ent.add_css_class('mono')
         adv.append(self.all_chk)
         adv.append(self.verify_chk)
+        adv.append(self.sha_ent)
         exp = Gtk.Expander(label='Afficher les propriétés avancées du périphérique', child=adv)
         root.append(exp)
 
@@ -212,8 +252,9 @@ class Window(Gtk.ApplicationWindow):
         self.log_win = None
 
         # Signaux
-        self.boot_dd.connect('notify::selected', lambda *_: self.update_ui())
+        self.boot_dd.connect('notify::selected', self.on_mode)
         self.opt_dd.connect('notify::selected', lambda *_: self.update_ui())
+        self.fs_dd.connect('notify::selected', lambda *_: self.update_ui())
         self.scheme_dd.connect('notify::selected', lambda *_: self.update_ui())
         self.target_dd.connect('notify::selected', lambda *_: self.update_ui())
         self.dev_dd.connect('notify::selected', lambda *_: self.update_ui())
@@ -229,6 +270,12 @@ class Window(Gtk.ApplicationWindow):
         drop = Gtk.DropTarget.new(Gio.File, Gdk.DragAction.COPY)
         drop.connect('drop', lambda _t, f, *_: self.set_image(f.get_path()) or True)
         self.add_controller(drop)
+        keys = Gtk.ShortcutController(scope=Gtk.ShortcutScope.GLOBAL)
+        for accel, fn in (('<Control>o', lambda *_: self.sel_btn.get_sensitive() and self.on_select(None) or True),
+                          ('<Control>q', lambda *_: self.on_close(None) or True)):
+            keys.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string(accel),
+                                               Gtk.CallbackAction.new(fn)))
+        self.add_controller(keys)
 
         self.log(f'LinXfus {VERSION} — moteur : {self.backend or "introuvable"}')
         self.refresh_devices(force=True)
@@ -320,10 +367,12 @@ class Window(Gtk.ApplicationWindow):
         self.img_kind, self.img_label = detect(path)
         self.efi, self.mode = None, None
         self.updating = True
-        set_items(self.boot_dd, [os.path.basename(path), 'Télécharger macOS (serveurs Apple)'], 0)
+        set_items(self.boot_dd, [os.path.basename(path)] + BOOT_EXTRA, 0)
         self.updating = False
         self.set_bar(0, 'PRÊT')
         kinds = {'windows': 'Windows', 'mac': 'macOS', 'linux': 'Linux / image brute'}
+        self.conf['last_dir'] = os.path.dirname(path)
+        save_conf(self.conf)
         self.log(f'Image : {path} — {kinds[self.img_kind]}')
         self.status.set_label(f'Image {kinds[self.img_kind]} sélectionnée')
         self.update_ui()
@@ -338,6 +387,8 @@ class Window(Gtk.ApplicationWindow):
         filters.append(f)
         filters.append(a)
         d = Gtk.FileDialog(title='Choisir une image', modal=True, filters=filters, default_filter=f)
+        if os.path.isdir(self.conf.get('last_dir', '')):
+            d.set_initial_folder(Gio.File.new_for_path(self.conf['last_dir']))
 
         def done(dlg, res):
             try:
@@ -384,39 +435,53 @@ class Window(Gtk.ApplicationWindow):
         self.alert('SHA-256', f'{os.path.basename(self.image)}\n\n{digest}', ['OK', 'Copier'], copy)
 
     # ───────── options (comme Rufus : seules les options utiles sont actives) ─────────
+    def on_mode(self, *_):
+        if not (self.updating or self.busy):   # nouveau mode : on repart d'une barre vide
+            self.set_bar(0, 'PRÊT')
+        self.update_ui()
+
     def kind(self):
-        return 'mac-dl' if self.boot_dd.get_selected() == 1 else self.img_kind
+        return {1: 'mac-dl', 2: 'format'}.get(self.boot_dd.get_selected(), self.img_kind)
 
     def update_ui(self):
         if self.updating:
             return
         self.updating = True
         k, idle = self.kind(), not self.busy
-        mac = k in ('mac', 'mac-dl')
+        mac, fmt = k in ('mac', 'mac-dl'), k == 'format'
+        first = lambda dd: dd.get_model().get_string(0)   # noqa: E731
         self.opt_field.set_visible(k in ('windows', 'mac-dl'))
-        if k == 'windows' and self.opt_dd.get_model().get_n_items() != 2:
-            set_items(self.opt_dd, ['Installation standard de Windows',
-                                    'Installation étendue (sans TPM / Secure Boot / 4 Go de RAM)'])
-        if k == 'mac-dl' and self.opt_dd.get_model().get_n_items() != len(MACOS):
+        if k == 'windows' and first(self.opt_dd) != 'Installation standard de Windows':
+            set_items(self.opt_dd, ['Installation standard de Windows'])
+        if k == 'mac-dl' and first(self.opt_dd) != MACOS[0][1]:
             set_items(self.opt_dd, [n for _, n in MACOS])
-        if k == 'windows':
-            if self.scheme_dd.get_model().get_n_items() != 2:
+        if k == 'windows' or fmt:
+            if first(self.scheme_dd) != 'MBR':
                 set_items(self.scheme_dd, ['MBR', 'GPT'])
-            set_items(self.target_dd, ['UEFI (non CSM)' if self.scheme_dd.get_selected() == 1 else 'BIOS ou UEFI'])
+            gpt = self.scheme_dd.get_selected() == 1
+            set_items(self.target_dd, ['Stockage (non amorçable)'] if fmt else
+                      ['UEFI (non CSM)' if gpt else 'BIOS ou UEFI'])
         elif mac:
             set_items(self.scheme_dd, ['GPT'])
-            if self.target_dd.get_model().get_n_items() != 2:
+            if first(self.target_dd) != 'Mac Intel (image disque)':
                 set_items(self.target_dd, ['Mac Intel (image disque)', 'Hackintosh (OpenCore)'])
         else:
             set_items(self.scheme_dd, ['Défini par l\'image'])
             set_items(self.target_dd, ['Défini par l\'image'])
         hack = mac and self.target_dd.get_selected() == 1
         fat = k == 'windows' or hack
-        set_items(self.fs_dd, ['FAT32' if fat else 'Défini par l\'image'])
+        if fmt:
+            names = [f[1] for f in self.fs_avail]
+            if [self.fs_dd.get_model().get_string(i) for i in range(self.fs_dd.get_model().get_n_items())] != names:
+                set_items(self.fs_dd, names)
+            self.label_ent.set_max_length(self.fs_avail[self.fs_dd.get_selected()][3])
+        else:
+            set_items(self.fs_dd, ['FAT32' if fat else 'Défini par l\'image'])
+            self.label_ent.set_max_length(11)
         if (k, hack) != self.mode:   # nom de volume par défaut, comme Rufus
             self.mode = (k, hack)
             self.label_ent.set_text('MACRECOVERY' if hack else fat_label(self.img_label, 'WINUSB')
-                                    if k == 'windows' else self.img_label if k else '')
+                                    if k == 'windows' else self.img_label if k in ('linux', 'mac') else '')
         self.efi_field.set_visible(hack)
         newer = k == 'mac-dl' and not hack and self.opt_dd.get_selected() < 6
         self.hint.set_label('Mac Intel : fiable jusqu\'à Catalina. Si cette version est refusée, '
@@ -424,15 +489,18 @@ class Window(Gtk.ApplicationWindow):
         self.hint.set_visible(newer)
         self.updating = False
 
+        img = k in ('windows', 'linux', 'mac')
         self.dev_dd.set_sensitive(idle and bool(self.devices))
         self.boot_dd.set_sensitive(idle)
-        self.sel_btn.set_sensitive(idle and k != 'mac-dl')
-        self.hash_btn.set_sensitive(idle and bool(self.image) and k != 'mac-dl')
-        self.opt_dd.set_sensitive(idle)
-        self.scheme_dd.set_sensitive(idle and k == 'windows')
+        self.sel_btn.set_sensitive(idle and (img or k is None))
+        self.hash_btn.set_sensitive(idle and bool(self.image) and img)
+        self.opt_dd.set_sensitive(idle and k == 'mac-dl')
+        self.scheme_dd.set_sensitive(idle and (k == 'windows' or fmt))
         self.target_dd.set_sensitive(idle and mac)
-        self.label_ent.set_sensitive(idle and fat)
+        self.fs_dd.set_sensitive(idle and fmt and len(self.fs_avail) > 1)
+        self.label_ent.set_sensitive(idle and (fat or fmt))
         self.verify_chk.set_sensitive(idle and k == 'linux')
+        self.sha_ent.set_sensitive(idle and img)
         self.all_chk.set_sensitive(idle)
         self.start_btn.set_sensitive(idle and bool(self.sel_dev()) and bool(self.backend) and k is not None)
         self.close_btn.set_label('ANNULER' if self.proc else 'FERMER')
@@ -440,12 +508,22 @@ class Window(Gtk.ApplicationWindow):
     # ───────── écriture ─────────
     def build_args(self):
         k, dev = self.kind(), self.sel_dev()[0]
+        gpt = self.scheme_dd.get_selected() == 1
         args = ['-d', dev]
-        args += ['--mac-recovery', MACOS[self.opt_dd.get_selected()][0]] if k == 'mac-dl' else ['-i', self.image]
+        if k == 'format':
+            args += ['--format', self.fs_avail[self.fs_dd.get_selected()][0], '-s', 'gpt' if gpt else 'mbr']
+        elif k == 'mac-dl':
+            args += ['--mac-recovery', MACOS[self.opt_dd.get_selected()][0]]
+        else:
+            args += ['-i', self.image]
         if k == 'windows':
-            args += ['-s', 'gpt' if self.scheme_dd.get_selected() == 1 else 'mbr']
-            if self.opt_dd.get_selected() == 1:
-                args.append('--win11-bypass')
+            w = self.wue
+            args += ['-s', 'gpt' if gpt else 'mbr']
+            args += [flag for key, flag in (('bypass', '--win11-bypass'), ('no_online', '--no-online-account'),
+                                            ('no_data', '--no-data-collection'), ('no_bitlocker', '--no-bitlocker'))
+                     if w.get(key)]
+            if w.get('user_on') and w.get('user'):
+                args += ['--local-account', w['user']]
         if k in ('mac', 'mac-dl'):
             hack = self.target_dd.get_selected() == 1
             args += ['--mac-mode', 'opencore' if hack else 'raw']
@@ -455,17 +533,94 @@ class Window(Gtk.ApplicationWindow):
             args += ['-L', self.label_ent.get_text().strip()]
         if self.verify_chk.get_sensitive() and self.verify_chk.get_active():
             args.append('-V')
+        if self.sha_ent.get_sensitive() and self.sha_ent.get_text().strip():
+            args += ['--sha256', self.sha_ent.get_text().strip().lower()]
         if self.all_chk.get_active():
             args.append('-f')
         return args
 
     def on_start(self, _btn):
-        if not self.sel_dev():
+        dev, k = self.sel_dev(), self.kind()
+        if not dev:
             return
+        sha = self.sha_ent.get_text().strip()
+        if sha and self.sha_ent.get_sensitive() and not re.fullmatch(r'[0-9a-fA-F]{64}', sha):
+            self.alert('SHA-256 invalide', 'Il faut 64 caractères hexadécimaux (0-9, a-f).')
+            return
+        if k in ('windows', 'linux') and not self.image.lower().endswith(('.xz', '.gz', '.zst', '.bz2')):
+            size = os.path.getsize(self.image)
+            if size > dev[1]:   # inutile de demander le mot de passe pour échouer ensuite
+                self.alert('Clé trop petite', f'L\'image fait {human(size)} et la clé {human(dev[1])}.')
+                return
+        if k == 'windows':
+            self.ask_wue(self.confirm)
+        else:
+            self.confirm()
+
+    def confirm(self):
         d, _size, model = self.sel_dev()
         self.alert(f'AVERTISSEMENT : TOUTES LES DONNÉES DU PÉRIPHÉRIQUE « {model} ({d}) » VONT ÊTRE DÉTRUITES.',
                    'Pour continuer, cliquez sur OK. Pour quitter, cliquez sur Annuler.',
                    ['Annuler', 'OK'], lambda i: i == 1 and self.run(self.build_args()))
+
+    def ask_wue(self, then):
+        """Dialogue « Expérience utilisateur Windows », comme Rufus après DÉMARRER."""
+        w = self.wue
+        win = Gtk.Window(title='Expérience utilisateur Windows', transient_for=self, modal=True, resizable=False)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=16, margin_bottom=14,
+                      margin_start=18, margin_end=18)
+        head = Gtk.Label(label='Personnaliser l\'installation de Windows ?', xalign=0, margin_bottom=4)
+        head.add_css_class('section')
+        box.append(head)
+        chk = {key: Gtk.CheckButton(label=text, active=bool(w.get(key))) for key, text in (
+            ('bypass', 'Supprimer la nécessité d\'avoir 4 Go+ de RAM, Secure Boot et TPM 2.0'),
+            ('no_online', 'Supprimer la nécessité d\'utiliser un compte Microsoft en ligne'),
+            ('user_on', 'Créer un compte local sous le nom de :'),
+            ('no_data', 'Désactiver la collecte de données (supprime les questions de confidentialité)'),
+            ('no_bitlocker', 'Désactiver le chiffrement automatique BitLocker'))}
+        ent = Gtk.Entry(text=w.get('user') or GLib.get_user_name(), max_length=20, hexpand=True)
+        for key, c in chk.items():
+            if key == 'user_on':
+                row = Gtk.Box(spacing=8)
+                row.append(c)
+                row.append(ent)
+                box.append(row)
+            else:
+                box.append(c)
+        tip = ('Le compte local est créé sans mot de passe : Windows demande d\'en choisir un '
+               'à la première ouverture de session.')
+        note = Gtk.Label(xalign=0, wrap=True, max_width_chars=64, margin_top=4, label=tip)
+        note.add_css_class('status')
+        box.append(note)
+        ok, cancel = Gtk.Button(label='OK', width_request=96), Gtk.Button(label='Annuler', width_request=96)
+        row = Gtk.Box(spacing=6, halign=Gtk.Align.END, margin_top=8)
+        row.append(ok)
+        row.append(cancel)
+        box.append(row)
+        win.set_child(box)
+        win.set_default_widget(ok)
+
+        def accept(*_):
+            name = ent.get_text().strip()
+            if chk['user_on'].get_active() and not valid_user(name):
+                ent.add_css_class('error')
+                note.set_label('Nom de compte invalide : 20 caractères max (lettres, chiffres, espace, point, '
+                               'tiret), et pas un nom réservé comme « Administrateur ».')
+                return
+            self.wue = {key: c.get_active() for key, c in chk.items()} | {'user': name}
+            self.conf['wue'] = self.wue
+            save_conf(self.conf)
+            win.close()
+            then()
+        ok.connect('clicked', accept)
+        ent.connect('activate', accept)
+        ent.connect('changed', lambda *_: (ent.remove_css_class('error'), note.set_label(tip)))
+        chk['user_on'].connect('toggled', lambda c: ent.set_sensitive(c.get_active()))
+        ent.set_sensitive(chk['user_on'].get_active())
+        cancel.connect('clicked', lambda *_: win.close())
+        win.ok_btn, win.user_ent, win.checks = ok, ent, chk
+        self.wue_win = win
+        win.present()
 
     def run(self, args):
         cmd = [self.backend, '--gui'] + args
@@ -524,8 +679,12 @@ class Window(Gtk.ApplicationWindow):
                 self.progress(1 - left / self.fmax if self.fmax else 1)
             return False
         m = RE_DD.match(s)
-        if m and self.total:
-            self.progress(int(m[1]) / self.total)
+        if m:
+            done = int(m[1])
+            if self.total:
+                self.progress(done / self.total, done)
+            else:   # taille finale inconnue (.gz, .bz2) : on affiche ce qui est écrit
+                self.set_bar(None, f'{self.phase} : {human(done)}')
             return False
         m = RE_PCT.search(s)
         if m and not s.startswith('Calcul'):
@@ -534,9 +693,26 @@ class Window(Gtk.ApplicationWindow):
         self.log(s)
         return False
 
-    def progress(self, frac):
-        self.frac = max(0.0, min(1.0, frac))
-        self.set_bar(self.frac, f'{self.phase} : {100 * self.frac:.1f} %')
+    def progress(self, frac, done=None):
+        now = time.monotonic()
+        frac = max(0.0, min(1.0, frac))
+        if self.frac is None:
+            self.pt0, self.f0 = now, frac
+        self.frac = frac
+        self.set_bar(frac, f'{self.phase} : {100 * frac:.1f} %')
+        el = now - self.pt0
+        if el >= 3 and frac > self.f0:   # vitesse et temps restant de l'étape en cours
+            left = int(el * (1 - frac) / (frac - self.f0))
+            txt = f'Temps restant : {left // 60:02d}:{left % 60:02d}'
+            self.status.set_label(f'{done / el / 1e6:.1f} Mo/s — {txt}' if done else txt)
+
+    def notify(self, body):
+        app = self.get_application()
+        if self.is_active() or app.get_dbus_connection() is None:
+            return
+        n = Gio.Notification.new('LinXfus')
+        n.set_body(body)
+        app.send_notification('fin', n)
 
     def tick(self):
         if self.proc:
@@ -554,6 +730,7 @@ class Window(Gtk.ApplicationWindow):
         elif rc == 0:
             self.set_bar(1, 'PRÊT')
             self.status.set_label(f'Terminé en {self.clock.get_label()}')
+            self.notify('La clé est prête, tu peux la retirer.')
             if self.warnings:
                 self.alert('Clé prête, avec des remarques', '\n\n'.join(self.warnings))
         elif rc in (126, 127) and not self.error:
@@ -562,6 +739,7 @@ class Window(Gtk.ApplicationWindow):
         else:
             self.set_bar(0, 'ERREUR')
             self.status.set_label('Échec — voir le journal')
+            self.notify('Échec : ' + (self.error or 'voir le journal.'))
             self.alert('Erreur', self.error or f'Le moteur s\'est arrêté (code {rc}). Voir le journal.')
         self.log(f'— fin (code {rc})')
         self.refresh_devices(force=True)

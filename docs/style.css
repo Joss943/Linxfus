@@ -32,6 +32,7 @@ button:hover{filter:brightness(1.1)}button:focus-visible,a:focus-visible{outline
 .win-bar i{position:absolute;right:.8rem;width:.75rem;height:.75rem;border-radius:50%;background:var(--bd)}
 .usage{display:grid;grid-template-columns:1fr auto;gap:3rem;align-items:center}
 .win.small{width:min(100%,22rem)}
+.usage.rev{grid-template-columns:auto 1fr}.usage.rev .lead{font-size:1rem;margin-bottom:1rem}
 .steps{list-style:none;padding:0;counter-reset:s;display:grid;gap:1.1rem}
 .steps li{counter-increment:s;position:relative;padding-left:3rem}
 .steps li::before{content:counter(s);position:absolute;left:0;top:.1rem;width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;font:700 .95rem var(--mono);color:var(--bg);background:var(--ac)}
@@ -50,5 +51,5 @@ button:hover{filter:brightness(1.1)}button:focus-visible,a:focus-visible{outline
 .checks li::before{content:"✓";position:absolute;left:0;color:var(--ac);font-weight:700}
 .limits li::before{content:"!";position:absolute;left:.3rem;color:var(--ye);font-weight:700}
 footer{margin-top:4rem;padding:2rem 1.2rem;border-top:1px solid var(--bd);text-align:center;color:var(--mu);font-size:.9rem}
-@media (max-width:860px){.hero,.usage{grid-template-columns:1fr}.win{margin:0 auto}}
+@media (max-width:860px){.hero,.usage,.usage.rev{grid-template-columns:1fr}.win{margin:0 auto}}
 @media (max-width:640px){.nav nav a:not(.gh){display:none}section{padding-top:3rem}.cmd{flex-direction:column;align-items:stretch}}

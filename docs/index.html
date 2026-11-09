@@ -31,7 +31,7 @@
 <main>
 <section class="hero">
   <div class="hero-text">
-    <p class="tag">v2.0.0 · GTK 4 · MIT</p>
+    <p class="tag">v2.1.0 · GTK 4 · MIT</p>
     <h1>Rufus, version Linux.<br><em>Tu choisis, tu cliques, c'est prêt.</em></h1>
     <p class="lead">LinXfus crée des clés USB bootables <b>Windows</b>, <b>macOS</b> et <b>Linux</b> dans une fenêtre qui reprend celle de Rufus : périphérique, image, options, <b>DÉMARRER</b>. Il reconnaît l'image tout seul et refuse de toucher à ton disque système.</p>
     <div class="cmd" id="installer">
@@ -41,7 +41,7 @@
     <p class="hint">Une seule fois. Ensuite, ouvre <b>LinXfus</b> dans tes applications, comme n'importe quel logiciel. Fedora, Ubuntu, Debian 13, Arch.</p>
   </div>
   <figure class="win">
-    <div class="win-bar"><span>LinXfus 2.0.0</span><i></i></div>
+    <div class="win-bar"><span>LinXfus 2.1.0</span><i></i></div>
     <picture>
       <source srcset="app-dark.png" media="(prefers-color-scheme: dark)">
       <img src="app-light.png" width="520" height="649" alt="Fenêtre de LinXfus : périphérique, type de démarrage, option d'image, schéma de partition, options de formatage, statut et bouton DÉMARRER">
@@ -55,17 +55,37 @@
     <ol class="steps">
       <li><b>Branche ta clé</b><span>Elle apparaît dans « Périphérique ». Seules les clés amovibles sont listées.</span></li>
       <li><b>SÉLECTION</b><span>Choisis ton ISO, IMG ou DMG, ou glisse-la sur la fenêtre. Pour macOS, choisis « Télécharger macOS ».</span></li>
-      <li><b>Vérifie les options</b><span>Schéma MBR ou GPT, Windows 11 sans TPM, nom de volume. Seules les options utiles sont actives.</span></li>
-      <li><b>DÉMARRER</b><span>Tu confirmes, tu tapes ton mot de passe, et la barre verte affiche <b>PRÊT</b>.</span></li>
+      <li><b>Vérifie les options</b><span>Schéma MBR ou GPT, nom de volume. Seules les options utiles sont actives.</span></li>
+      <li><b>DÉMARRER</b><span>Tu confirmes, tu tapes ton mot de passe. La barre verte avance avec le temps restant, puis affiche <b>PRÊT</b>.</span></li>
     </ol>
   </div>
   <figure class="win small">
-    <div class="win-bar"><span>LinXfus 2.0.0</span><i></i></div>
+    <div class="win-bar"><span>LinXfus 2.1.0</span><i></i></div>
     <picture>
       <source srcset="app-run-dark.png" media="(prefers-color-scheme: dark)">
       <img src="app-run-light.png" width="520" height="649" alt="Écriture en cours : barre de progression verte à 47 %, bouton ANNULER" loading="lazy">
     </picture>
   </figure>
+</section>
+
+<section class="usage rev">
+  <figure class="win">
+    <div class="win-bar"><span>Expérience utilisateur Windows</span><i></i></div>
+    <picture>
+      <source srcset="wue-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="wue-light.png" width="550" height="319" alt="Dialogue des options Windows : sans TPM, sans compte Microsoft, compte local, collecte de données, BitLocker" loading="lazy">
+    </picture>
+  </figure>
+  <div>
+    <h2>Les options Windows de Rufus</h2>
+    <p class="lead">Avec une ISO Windows, DÉMARRER ouvre le même dialogue que Rufus. Tu coches, LinXfus prépare l'installation en conséquence.</p>
+    <ul class="checks">
+      <li>Sans TPM 2.0, Secure Boot ni 4 Go de RAM</li>
+      <li>Sans compte Microsoft en ligne obligatoire</li>
+      <li>Compte local créé d'avance, au nom de ton choix</li>
+      <li>Sans questions de confidentialité, sans chiffrement BitLocker automatique</li>
+    </ul>
+  </div>
 </section>
 
 <section id="systemes">
@@ -77,7 +97,7 @@
         <li>MBR <small>(BIOS ou UEFI)</small> ou GPT <small>(UEFI)</small>, FAT32</li>
         <li><code>install.wim</code> de plus de 4 Go découpé automatiquement</li>
         <li>Démarrage BIOS via GRUB → <code>bootmgr</code></li>
-        <li>« Installation étendue » : sans TPM, Secure Boot ni 4 Go de RAM</li>
+        <li>Options d'installation de Rufus : sans TPM, sans compte Microsoft…</li>
       </ul>
     </article>
     <article class="card mac">
@@ -105,9 +125,9 @@
   <h2>Léger et rapide</h2>
   <div class="grid4">
     <div><b>~60 Ko</b><span>Une fenêtre GTK 4 en Python et un moteur bash. Aucun service, rien qui tourne en fond.</span></div>
-    <div><b>Natif</b><span>Suit le thème clair ou sombre de ton bureau, GNOME, KDE ou autre.</span></div>
+    <div><b>Formatage simple</b><span>Le mode « Non amorçable » remet une clé à neuf en FAT32, exFAT, NTFS ou ext4.</span></div>
     <div><b>Écriture directe</b><span>Blocs de 4 Mo en accès direct, sans copie intermédiaire.</span></div>
-    <div><b>Vraie progression</b><span>La barre suit ce qui est réellement écrit sur la clé, jusqu'au dernier octet.</span></div>
+    <div><b>Vraie progression</b><span>Vitesse, temps restant, et une barre qui suit ce qui est réellement écrit sur la clé.</span></div>
   </div>
 </section>
 
@@ -128,7 +148,7 @@
   <ul>
     <li><b>Mac Apple Silicon</b> : ils ne démarrent pas sur ces clés. Il faut <code>createinstallmedia</code> depuis un Mac.</li>
     <li><b>macOS sur Mac Intel</b> : fiable jusqu'à Catalina. Au-delà, si la version est refusée, choisis Hackintosh (OpenCore). La clé n'est pas effacée avant.</li>
-    <li><b>Windows 11 sans TPM</b> : même méthode que Rufus. Microsoft peut la casser dans une future version.</li>
+    <li><b>Options d'installation Windows</b> : mêmes réglages que Rufus, pas encore vérifiés par nous sur une vraie installation. Microsoft peut aussi les casser dans une future version.</li>
     <li><b>Pas de persistance</b> pour les live USB Linux. Pour ça, Ventoy.</li>
   </ul>
 </section>

@@ -7,7 +7,7 @@ IFS=$' \t\n'
 umask 077
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-readonly VERSION=2.0.0 PROG=linxfus
+readonly VERSION=2.1.0 PROG=linxfus
 readonly FAT32_MAX=4294967295 SWM_MB=3800 CACHE=/var/cache/linxfus
 # macrecovery (OpenCorePkg) épinglé sur une version ET une empreinte : rien d'autre n'est exécuté.
 readonly OC_URL=https://raw.githubusercontent.com/acidanthera/OpenCorePkg/1.0.8/Utilities/macrecovery/macrecovery.py
@@ -56,6 +56,13 @@ ${W}Windows${N}  (FAT32, install.wim > 4 Go découpé automatiquement)
   -s, --scheme mbr|gpt    mbr = BIOS + UEFI (défaut) · gpt = UEFI seul
       --no-bios           ne pas installer le chargeur BIOS (GRUB)
       --win11-bypass      saute les contrôles TPM / Secure Boot / RAM
+      --no-online-account pas de compte Microsoft en ligne obligatoire
+      --local-account NOM crée un compte local (mot de passe à définir au 1er démarrage)
+      --no-data-collection  saute les questions de confidentialité (collecte minimale)
+      --no-bitlocker      pas de chiffrement automatique BitLocker
+
+${W}Formatage simple${N}  (clé non amorçable)
+      --format FS         fat32 | exfat | ntfs | ext4   (avec -L NOM et -s mbr|gpt)
 
 ${W}macOS${N}
       --mac-recovery VER  recovery officielle Apple : elcapitan sierra highsierra
@@ -74,6 +81,7 @@ EOF
 # ─────────────────────────────── options ───────────────────────────────
 IMAGE='' DEVICE='' TYPE=auto SCHEME=mbr LABEL='' SHA='' VERIFY=0 YES=0 FORCE=0
 NO_BIOS=0 WIN11_BYPASS=0 MAC_RECOVERY='' MAC_MODE=raw EFI_DIR='' ACTION=write
+NO_ONLINE=0 LOCAL_USER='' NO_DATA=0 NO_BITLOCKER=0 FORMAT=''
 ARGS=("$@")
 arg() { [[ $# -ge 2 && -n $2 ]] || die "$1 attend une valeur."; }
 while (($#)); do
@@ -92,6 +100,11 @@ while (($#)); do
     -f|--force)     FORCE=1 ;;
     --no-bios)      NO_BIOS=1 ;;
     --win11-bypass) WIN11_BYPASS=1 ;;
+    --no-online-account)  NO_ONLINE=1 ;;
+    --no-data-collection) NO_DATA=1 ;;
+    --no-bitlocker)       NO_BITLOCKER=1 ;;
+    --local-account)      arg "$@"; LOCAL_USER=$2; shift ;;
+    --format)       arg "$@"; FORMAT=${2,,}; shift ;;
     -l|--list)      ACTION=list ;;
     --deps)         ACTION=deps ;;
     --gui)          YES=1 ;;
@@ -105,6 +118,16 @@ done
 [[ $SCHEME =~ ^(mbr|gpt)$ ]]              || die "--scheme : mbr | gpt"
 [[ $MAC_MODE =~ ^(raw|opencore)$ ]]       || die "--mac-mode : raw | opencore"
 [[ -z $SHA || $SHA =~ ^[0-9a-f]{64}$ ]]   || die "--sha256 : 64 caractères hexadécimaux attendus."
+[[ -z $FORMAT || $FORMAT =~ ^(fat32|exfat|ntfs|ext4)$ ]] || die "--format : fat32 | exfat | ntfs | ext4"
+if [[ -n $LOCAL_USER ]]; then  # règles Windows : 20 caractères max, pas de caractères spéciaux ni de nom réservé
+  re='^[[:alnum:]_. -]{1,20}$'
+  [[ $LOCAL_USER =~ $re && $LOCAL_USER != " "* && $LOCAL_USER != *[" ".] ]] \
+    || die "--local-account : 20 caractères max, lettres, chiffres, espace, point, tiret."
+  case ${LOCAL_USER,,} in
+    administrator|administrateur|guest|invité|defaultaccount|wdagutilityaccount|system|none|local|krbtgt)
+      die "--local-account : « $LOCAL_USER » est un nom réservé par Windows." ;;
+  esac
+fi
 [[ -n $MAC_RECOVERY ]] && TYPE=mac
 
 # ─────────────────────────────── disques ───────────────────────────────
@@ -171,16 +194,24 @@ list_disks() {
 foreign_mounts() { lsblk -lnpo MOUNTPOINT "$DEVICE" 2>/dev/null | grep -vE '^$|^/(run/)?media/|^/mnt(/|$)' || true; }
 
 install_deps() {
+  local pm core opt p
   if command -v dnf >/dev/null; then
-    dnf install -y parted dosfstools rsync wimlib-utils grub2-tools grub2-pc-modules dmg2img python3 curl xz zstd bzip2
+    pm=(dnf install -y); opt=(dmg2img exfatprogs ntfsprogs)
+    core=(parted dosfstools rsync wimlib-utils grub2-tools grub2-pc-modules python3 curl xz zstd bzip2)
   elif command -v apt-get >/dev/null; then
-    apt-get update && apt-get install -y parted dosfstools rsync wimtools grub-pc-bin grub2-common dmg2img python3 curl xz-utils zstd bzip2
+    apt-get update
+    pm=(apt-get install -y); opt=(dmg2img exfatprogs ntfs-3g)
+    core=(parted dosfstools rsync wimtools grub-pc-bin grub2-common python3 curl xz-utils zstd bzip2)
   elif command -v pacman >/dev/null; then
-    pacman -S --needed --noconfirm parted dosfstools rsync wimlib grub python curl xz zstd bzip2
-    warn "dmg2img est dans l'AUR (yay -S dmg2img), utile seulement pour macOS en mode raw."
+    pm=(pacman -S --needed --noconfirm); opt=(exfatprogs ntfs-3g)
+    core=(parted dosfstools rsync wimlib grub python curl xz zstd bzip2)
   else
     die "Gestionnaire de paquets non géré. À installer : parted dosfstools rsync wimlib grub(i386-pc) dmg2img python3 curl"
   fi
+  "${pm[@]}" "${core[@]}"
+  for p in "${opt[@]}"; do  # un paquet optionnel absent ne doit pas bloquer l'installation
+    "${pm[@]}" "$p" >/dev/null 2>&1 || warn "Paquet optionnel indisponible : $p"
+  done
   ok "Dépendances installées."
 }
 
@@ -270,16 +301,49 @@ fat_label() {  # majuscules, 11 caractères max, caractères sûrs
   echo "${l:-$2}"
 }
 
-make_fat32() {  # $1 = mbr|gpt, $2 = label
-  local p
+clean_label() { local l; l=$(printf '%s' "$1" | tr -d '\000-\037"\\/'); echo "${l:0:$2}"; }
+
+PART=''
+make_part() {  # $1 = mbr|gpt, $2 = type parted, $3 = nom GPT, puis drapeaux parted → renseigne PART
+  local a=(mklabel msdos mkpart primary "$2" 4MiB 100%)
+  [[ $1 == gpt ]] && a=(mklabel gpt mkpart "$3" "$2" 4MiB 100%)
+  parted -s -- "$DEVICE" "${a[@]}" "${@:4}"
+  PART=$(part1 "$DEVICE"); wait_part "$PART"
+  wipefs -aq -- "$PART" 2>/dev/null || true
+}
+
+make_fat32() {  # $1 = mbr|gpt, $2 = label ; partition montée dans USB_MNT
   info "Partitionnement ($1) + FAT32 « $2 »…"
-  if [[ $1 == gpt ]]; then parted -s -- "$DEVICE" mklabel gpt mkpart "$2" fat32 4MiB 100% set 1 msftdata on
-  else parted -s -- "$DEVICE" mklabel msdos mkpart primary fat32 4MiB 100% set 1 boot on set 1 lba on; fi
-  p=$(part1 "$DEVICE"); wait_part "$p"
-  wipefs -aq -- "$p" 2>/dev/null || true
-  mkfs.vfat -F 32 -n "$2" -- "$p" >/dev/null
+  if [[ $1 == gpt ]]; then make_part gpt fat32 "$2" set 1 msftdata on
+  else make_part mbr fat32 "$2" set 1 boot on set 1 lba on; fi
+  mkfs.vfat -F 32 -n "$2" "$PART" >/dev/null
   USB_MNT=$WORK/usb; mkdir -p "$USB_MNT"
-  mount -t vfat -o nosuid,nodev,noexec,utf8,quiet -- "$p" "$USB_MNT"
+  mount -t vfat -o nosuid,nodev,noexec,utf8,quiet -- "$PART" "$USB_MNT"
+}
+
+write_format() {  # clé non amorçable : une partition, un système de fichiers
+  local fs=$FORMAT label ptype=ntfs flags=() la=() u=${PKEXEC_UID:-${SUDO_UID:-0}}
+  case $fs in
+    fat32) need mkfs.vfat;  ptype=fat32; label=$(fat_label "$LABEL" USB) ;;
+    exfat) need mkfs.exfat; label=$(clean_label "$LABEL" 15) ;;
+    ntfs)  need mkfs.ntfs;  label=$(clean_label "$LABEL" 32) ;;
+    ext4)  need mkfs.ext4;  ptype=ext4; label=$(clean_label "$LABEL" 16) ;;
+  esac
+  need parted
+  if [[ $SCHEME == gpt ]]; then [[ $fs == ext4 ]] || flags=(set 1 msftdata on)
+  elif [[ $fs == fat32 ]]; then flags=(set 1 lba on); fi
+  [[ -n $label ]] && la=(-L "$label")
+  prepare_device
+  info "Formatage de $DEVICE en ${fs^^}…"
+  make_part "$SCHEME" "$ptype" "$(fat_label "$label" DATA)" "${flags[@]}"
+  case $fs in
+    fat32) mkfs.vfat -F 32 -n "$label" "$PART" >/dev/null ;;
+    exfat) mkfs.exfat "${la[@]}" "$PART" >/dev/null ;;
+    ntfs)  mkfs.ntfs -Q -F "${la[@]}" "$PART" >/dev/null ;;
+    ext4)  # racine attribuée à l'utilisateur, sinon il ne peut rien écrire sur sa clé
+           mkfs.ext4 -q -F "${la[@]}" -E "root_owner=$u:$(id -g "$u" 2>/dev/null || echo 0)" "$PART" ;;
+  esac
+  finish
 }
 
 # Copies sans métadonnées (FAT32 ne gère ni droits ni propriétaires).
@@ -322,8 +386,8 @@ write_raw() {
   prepare_device
   info "Écriture de ${img##*/} sur $DEVICE…"
   [[ -n $size ]] && ((GUI)) && echo "@T $size"
-  if ! is_compressed "$img"; then dd if="$img" of="$DEVICE" bs=4M oflag=direct conv=fsync status=progress
-  else decompress "$img" | dd of="$DEVICE" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress; fi
+  if ! is_compressed "$img"; then LC_ALL=C dd if="$img" of="$DEVICE" bs=4M oflag=direct conv=fsync status=progress
+  else decompress "$img" | LC_ALL=C dd of="$DEVICE" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress; fi
   if ((VERIFY)); then
     info "Vérification (relecture de la clé)…"
     blockdev --flushbufs "$DEVICE"
@@ -343,28 +407,74 @@ write_linux() {
 }
 
 # ─────────────────────────────── Windows ───────────────────────────────
-write_unattend() {
-  local a k i
-  [[ -e $USB_MNT/autounattend.xml ]] && warn "L'ISO contenait déjà un autounattend.xml : il est remplacé."
+need_unattend() { ((WIN11_BYPASS || NO_ONLINE || NO_DATA || NO_BITLOCKER)) || [[ -n $LOCAL_USER ]]; }
+write_unattend() {  # fichier de réponses lu par l'installeur Windows (mêmes réglages que Rufus)
+  local f=$USB_MNT/autounattend.xml a k i
+  local at='language="neutral" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" publicKeyToken="31bf3856ad364e35" versionScope="nonSxS"'
+  _comp() { echo "    <component name=\"$1\" processorArchitecture=\"$a\" $at>"; }
+  [[ -e $f ]] && warn "L'ISO contenait déjà un autounattend.xml : il est remplacé."
   {
     echo '<?xml version="1.0" encoding="utf-8"?>'
-    echo '<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">'
-    echo '  <settings pass="windowsPE">'
-    for a in amd64 arm64; do
-      echo "    <component name=\"Microsoft-Windows-Setup\" processorArchitecture=\"$a\" publicKeyToken=\"31bf3856ad364e35\" language=\"neutral\" versionScope=\"nonSxS\">"
-      echo '      <RunSynchronous>'
-      i=1
-      for k in BypassTPMCheck BypassSecureBootCheck BypassRAMCheck; do
-        echo "        <RunSynchronousCommand wcm:action=\"add\"><Order>$i</Order><Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v $k /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>"
-        i=$((i + 1))
+    echo '<unattend xmlns="urn:schemas-microsoft-com:unattend">'
+    if ((WIN11_BYPASS)); then
+      echo '  <settings pass="windowsPE">'
+      for a in amd64 arm64 x86; do
+        _comp Microsoft-Windows-Setup
+        echo '      <UserData><AcceptEula>true</AcceptEula><ProductKey><Key /></ProductKey></UserData>'
+        echo '      <RunSynchronous>'
+        i=1
+        for k in BypassTPMCheck BypassSecureBootCheck BypassRAMCheck; do
+          echo "        <RunSynchronousCommand wcm:action=\"add\"><Order>$i</Order><Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v $k /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>"
+          i=$((i + 1))
+        done
+        echo '      </RunSynchronous>'
+        echo '    </component>'
       done
-      echo '      </RunSynchronous>'
-      echo '    </component>'
-    done
-    echo '  </settings>'
+      echo '  </settings>'
+    fi
+    if ((NO_ONLINE)); then
+      echo '  <settings pass="specialize">'
+      for a in amd64 arm64 x86; do
+        _comp Microsoft-Windows-Deployment
+        echo '      <RunSynchronous>'
+        echo '        <RunSynchronousCommand wcm:action="add"><Order>1</Order><Path>reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>'
+        echo '      </RunSynchronous>'
+        echo '    </component>'
+      done
+      echo '  </settings>'
+    fi
+    if ((NO_DATA || NO_BITLOCKER)) || [[ -n $LOCAL_USER ]]; then
+      echo '  <settings pass="oobeSystem">'
+      for a in amd64 arm64 x86; do
+        if ((NO_DATA)) || [[ -n $LOCAL_USER ]]; then
+          _comp Microsoft-Windows-Shell-Setup
+          if ((NO_DATA)); then echo '      <OOBE><HideEULAPage>true</HideEULAPage><ProtectYourPC>3</ProtectYourPC></OOBE>'; fi
+          if [[ -n $LOCAL_USER ]]; then  # mot de passe vide, à définir à la première ouverture de session
+            echo '      <UserAccounts><LocalAccounts><LocalAccount wcm:action="add">'
+            echo "        <Name>$LOCAL_USER</Name><DisplayName>$LOCAL_USER</DisplayName><Group>Administrators;Power Users</Group>"
+            echo '        <Password><Value>UABhAHMAcwB3AG8AcgBkAA==</Value><PlainText>false</PlainText></Password>'
+            echo '      </LocalAccount></LocalAccounts></UserAccounts>'
+            echo '      <FirstLogonCommands>'
+            echo "        <SynchronousCommand wcm:action=\"add\"><Order>1</Order><CommandLine>net user \"$LOCAL_USER\" /logonpasswordchg:yes</CommandLine></SynchronousCommand>"
+            echo '        <SynchronousCommand wcm:action="add"><Order>2</Order><CommandLine>net accounts /maxpwage:unlimited</CommandLine></SynchronousCommand>'
+            echo '      </FirstLogonCommands>'
+          fi
+          echo '    </component>'
+        fi
+        if ((NO_BITLOCKER)); then
+          _comp Microsoft-Windows-SecureStartup-FilterDriver
+          echo '      <PreventDeviceEncryption>true</PreventDeviceEncryption>'
+          echo '    </component>'
+          _comp Microsoft-Windows-EnhancedStorage-Adm
+          echo '      <TCGSecurityActivationDisabled>1</TCGSecurityActivationDisabled>'
+          echo '    </component>'
+        fi
+      done
+      echo '  </settings>'
+    fi
     echo '</unattend>'
-  } >"$USB_MNT/autounattend.xml"
-  ok "autounattend.xml ajouté (contournement TPM / Secure Boot / RAM)."
+  } >"$f"
+  ok "autounattend.xml ajouté (options d'installation Windows)."
 }
 
 install_bios_loader() {
@@ -412,7 +522,7 @@ write_windows() {
     wimlib-imagex split "$src" "$dst" "$SWM_MB"
   done
 
-  ((WIN11_BYPASS)) && write_unattend
+  if need_unattend; then write_unattend; fi
   [[ $SCHEME == mbr ]] && ((!NO_BIOS)) && install_bios_loader
   finish
   [[ $SCHEME == gpt ]] && info "Schéma GPT : démarre la clé en mode UEFI."
@@ -512,7 +622,7 @@ write_mac() {
 interactive() {
   local a i disks=()
   echo "${W}═══ LinXfus $VERSION — clé USB bootable ═══${N}"
-  if [[ -z $IMAGE && -z $MAC_RECOVERY ]]; then
+  if [[ -z $IMAGE && -z $MAC_RECOVERY && -z $FORMAT ]]; then
     echo "Image (ISO/IMG/DMG, Tab pour compléter) ou « mac » pour télécharger une recovery macOS :"
     read -erp "> " a
     a=${a%"${a##*[![:space:]]}"}; a=${a#\"}; a=${a%\"}; a=${a#\'}; a=${a%\'}; a=${a/#\~/$HOME}
@@ -559,12 +669,14 @@ if ((GUI)); then  # l'interface ferme stdin pour annuler : on arrête tout le gr
   WATCH=$!
 fi
 INTERACTIVE=0
-if [[ (-z $IMAGE && -z $MAC_RECOVERY) || -z $DEVICE ]]; then
+if [[ (-z $IMAGE && -z $MAC_RECOVERY && -z $FORMAT) || -z $DEVICE ]]; then
   [[ -t 0 ]] || die "Image (-i) et clé (-d) requises hors terminal. Voir --help."
   interactive
 fi
 
-if [[ -n $MAC_RECOVERY ]]; then
+if [[ -n $FORMAT ]]; then
+  TYPE=format
+elif [[ -n $MAC_RECOVERY ]]; then
   mac_board "$MAC_RECOVERY" >/dev/null || die "Version macOS inconnue : $MAC_RECOVERY (${MAC_VERSIONS[*]})"
 else
   [[ -f $IMAGE ]] || die "Image introuvable : $IMAGE"
@@ -603,13 +715,17 @@ fi
 
 case $TYPE in
   windows) desc="Windows — FAT32, MBR (BIOS + UEFI)"; [[ $SCHEME == gpt ]] && desc="Windows — FAT32, GPT (UEFI)"
-           ((WIN11_BYPASS)) && desc+=", bypass Win11" ;;
+           ((WIN11_BYPASS)) && desc+=", sans TPM / Secure Boot"; ((NO_ONLINE)) && desc+=", sans compte en ligne"
+           [[ -n $LOCAL_USER ]] && desc+=", compte « $LOCAL_USER »"; ((NO_DATA)) && desc+=", collecte minimale"
+           ((NO_BITLOCKER)) && desc+=", sans BitLocker"; : ;;
+  format)  desc="Formatage simple — ${FORMAT^^}, ${SCHEME^^} (non amorçable)" ;;
   mac)     desc="macOS — image disque (Mac Intel)"; [[ $MAC_MODE == opencore ]] && desc="macOS — OpenCore (com.apple.recovery.boot)" ;;
   linux)   desc="Linux / image brute — écriture dd" ;;
 esac
 echo
 echo "${W}Récapitulatif${N}"
-if [[ -n $MAC_RECOVERY ]]; then echo "  Image : recovery macOS « $MAC_RECOVERY » (serveurs Apple)"
+if [[ -n $FORMAT ]]; then echo "  Image : aucune"
+elif [[ -n $MAC_RECOVERY ]]; then echo "  Image : recovery macOS « $MAC_RECOVERY » (serveurs Apple)"
 else echo "  Image : ${IMAGE##*/} ($(hsize "$(stat -c %s -- "$IMAGE")"))"; fi
 echo "  Mode  : $desc"
 echo "  Clé   : $DEVICE — $(dev_model "$DEVICE") — $(hsize "$(dev_size "$DEVICE")")"
@@ -624,4 +740,5 @@ case $TYPE in
   windows) write_windows ;;
   mac)     write_mac ;;
   linux)   write_linux ;;
+  format)  write_format ;;
 esac

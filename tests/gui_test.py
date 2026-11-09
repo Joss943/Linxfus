@@ -41,7 +41,8 @@ os.makedirs(f'{T}/pl')
 sh(f'head -c 30M /dev/urandom > {T}/pl/a.bin && head -c 1M /dev/urandom > {T}/pl/b.bin')
 sh(f'wimlib-imagex capture {T}/pl {T}/win/sources/install.wim Test --compress=none >/dev/null')
 sh(f'head -c 2M /dev/urandom > {T}/win/sources/boot.wim; echo b > {T}/win/bootmgr; echo e > {T}/win/efi/boot/bootx64.efi')
-subprocess.run(['modprobe', '-q', 'udf'], stderr=subprocess.DEVNULL)   # module noyau chargé à la demande
+if shutil.which('modprobe'):
+    subprocess.run(['modprobe', '-q', 'udf'], stderr=subprocess.DEVNULL)   # module noyau chargé à la demande
 udf = 'udf' in open('/proc/filesystems').read()
 if udf:   # vraie ISO Microsoft : UDF
     sh(f'genisoimage -quiet -udf -iso-level 3 -J -V CCCOMA_X64FRE_FR-FR_DV9 -o {T}/win.iso {T}/win 2>/dev/null')
@@ -106,15 +107,32 @@ def main(app):
             win.update_ui()
         check('ISO Windows détectée' if udf else 'ISO Windows (type forcé)', win.kind() == 'windows')
         check('option d\'image visible', win.opt_field.get_visible())
-        win.opt_dd.set_selected(1)
+        win.wue = {'bypass': True, 'no_online': True, 'user_on': True, 'user': 'Jean Test',
+                   'no_data': True, 'no_bitlocker': False}
+        seen = []
+        win.ask_wue(lambda: seen.append(1))
+        dlg = win.wue_win
+        dlg.user_ent.set_text('a/b')
+        dlg.ok_btn.emit('clicked')
+        check('options Windows : nom de compte invalide refusé', not seen and dlg.user_ent.has_css_class('error'))
+        dlg.user_ent.set_text('Jean Test')
+        dlg.checks['no_bitlocker'].set_active(True)
+        if SHOTS:
+            GLib.timeout_add(350, lambda: shot(dlg, '2b-options-windows') or False)
+            GLib.timeout_add(450, lambda: dlg.ok_btn.emit('clicked') or False)
+        else:
+            dlg.ok_btn.emit('clicked')
         check('nom de volume = label ISO', win.label_ent.get_text() == 'CCCOMA_X64F')
         check('DÉMARRER actif', win.start_btn.get_sensitive())
-        GLib.timeout_add(500, lambda: step_windows_run() or False)
+        GLib.timeout_add(700, lambda: step_windows_run() or False)
 
     def step_windows_run():
         shot(win, '2-windows')
         args = win.build_args()
-        check('arguments Windows', '--win11-bypass' in args and '-s' in args)
+        check('options Windows : dialogue validé', win.wue['no_bitlocker'] and win.wue['user'] == 'Jean Test')
+        check('arguments Windows', all(a in args for a in (
+            '-s', '--win11-bypass', '--no-online-account', '--no-data-collection', '--no-bitlocker',
+            '--local-account', 'Jean Test')))
         win.run(args)
         GLib.timeout_add(400, lambda: shot(win, '3-en-cours') or False)
         wait_done(after_windows)
@@ -155,6 +173,23 @@ def main(app):
         check('écriture Linux + vérification : code 0', rc == 0 and 'Vérification OK' in log)
         r = subprocess.run(['cmp', '-n', str(20 << 20), f'{T}/rpi.img', LOOP])
         check('contenu de la clé identique', r.returncode == 0)
+        # Formatage simple (non amorçable)
+        win.boot_dd.set_selected(2)
+        names = [f[0] for f in win.fs_avail]
+        check('formatage : systèmes de fichiers proposés', win.kind() == 'format' and 'ext4' in names
+              and win.label_ent.get_sensitive() and not win.sel_btn.get_sensitive())
+        win.fs_dd.set_selected(names.index('ext4'))
+        win.scheme_dd.set_selected(1)
+        win.label_ent.set_text('DONNEES')
+        args = win.build_args()
+        check('formatage : arguments', args[2:6] == ['--format', 'ext4', '-s', 'gpt'] and 'DONNEES' in args)
+        GLib.timeout_add(400, lambda: (shot(win, '6-formatage'), win.run(args)) and False)
+        wait_done(after_format)
+
+    def after_format(rc):
+        out = subprocess.run(['blkid', '-p', '-o', 'export', LOOP + 'p1'], capture_output=True, text=True).stdout
+        check('formatage ext4 + nom de volume', rc == 0 and 'TYPE=ext4' in out and 'LABEL=DONNEES' in out)
+        win.boot_dd.set_selected(0)
         # Annulation en cours d'écriture
         win.verify_chk.set_active(False)
         win.set_image(f'{T}/big.img.xz')
